@@ -44,7 +44,7 @@ pub mod prelude
 /// ```
 pub fn extract<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<String>
 {
-    extract_rx(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
+    extract_rx(path, &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?)
 }
 
 /// Returns the first captured string from the given regular expression
@@ -64,8 +64,8 @@ pub fn extract<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<String
 pub fn extract_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 {
     let data = vfs::read_all(path)?;
-    let caps = rx.captures(&data).ok_or(VfsError::FailedToExtractString)?;
-    let value = caps.get(1).ok_or(VfsError::FailedToExtractString)?;
+    let caps = rx.captures(&data).ok_or(FileError::FailedToExtractString)?;
+    let value = caps.get(1).ok_or(FileError::FailedToExtractString)?;
     Ok(value.as_str().to_string())
 }
 
@@ -85,7 +85,7 @@ pub fn extract_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 /// ```
 pub fn extract_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<Vec<String>>
 {
-    extract_all_rx(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
+    extract_all_rx(path, &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?)
 }
 
 /// Returns all the captured strings from the given regular expression
@@ -142,6 +142,12 @@ pub fn insert_rx<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: &Regex
             break;
         }
     }
+    if loc == -1 {
+        return Err(FileError::InsertLocationNotFound.into());
+    }
+
+    // Write out the modified file
+
     Ok(())
 }
 
