@@ -1,7 +1,7 @@
-# rivia-edit
-[![license-badge](https://img.shields.io/crates/l/rivia-edit.svg)](https://opensource.org/licenses/MIT)
+# rivia-file
+[![license-badge](https://img.shields.io/crates/l/rivia-file.svg)](https://opensource.org/licenses/MIT)
 
-***Orchestration for editing files in a repeatable way***
+***Orchestration for manipulation of file content***
 
 ### Quick links
 * [Usage](#usage)

@@ -4,6 +4,9 @@
 //! ```
 //! use rivia_file::prelude::*;
 //! ```
+mod edit;
+use std::io::{BufRead, BufReader};
+
 use regex::Regex;
 use rivia_vfs::prelude::*;
 
@@ -28,6 +31,8 @@ pub mod prelude
 
 /// Returns the first captured string from the given regular expression
 ///
+/// * Handles path expansion and absolute path resolution
+///
 /// ### Examples
 /// ```
 /// use rivia_file::prelude::*;
@@ -39,10 +44,12 @@ pub mod prelude
 /// ```
 pub fn extract<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<String>
 {
-    extract_p(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
+    extract_rx(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
 }
 
 /// Returns the first captured string from the given regular expression
+///
+/// * Handles path expansion and absolute path resolution
 ///
 /// ### Examples
 /// ```
@@ -52,9 +59,9 @@ pub fn extract<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<String
 /// let file1 = vfs::root().mash("file1");
 /// let rx = Regex::new(r"'([^']+)'\s+\((\d{4})\)").unwrap();
 /// assert!(vfs::write_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941).").is_ok());
-/// assert_eq!(file::extract_p(&file1, &rx).unwrap(), "Citizen Kane");
+/// assert_eq!(file::extract_rx(&file1, &rx).unwrap(), "Citizen Kane");
 /// ```
-pub fn extract_p<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
+pub fn extract_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 {
     let data = vfs::read_all(path)?;
     let caps = rx.captures(&data).ok_or(VfsError::FailedToExtractString)?;
@@ -63,6 +70,8 @@ pub fn extract_p<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 }
 
 /// Returns all the captured strings from the given regular expression
+///
+/// * Handles path expansion and absolute path resolution
 ///
 /// ### Examples
 /// ```
@@ -76,10 +85,12 @@ pub fn extract_p<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 /// ```
 pub fn extract_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<Vec<String>>
 {
-    extract_all_p(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
+    extract_all_rx(path, &Regex::new(rx.as_ref()).map_err(|_| VfsError::FailedToExtractString)?)
 }
 
 /// Returns all the captured strings from the given regular expression
+///
+/// * Handles path expansion and absolute path resolution
 ///
 /// ### Examples
 /// ```
@@ -90,9 +101,9 @@ pub fn extract_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<Ve
 /// let rx = Regex::new(r"'[^']+'\s+\(\d{4}\)").unwrap();
 /// assert!(vfs::append_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941)\n").is_ok());
 /// assert!(vfs::append_all(&file1, "Another not great movie: 'Zoolander' (2001)").is_ok());
-/// assert_eq!(file::extract_all_p(&file1, &rx).unwrap(), vec!["'Citizen Kane' (1941)", "'Zoolander' (2001)"]);
+/// assert_eq!(file::extract_all_rx(&file1, &rx).unwrap(), vec!["'Citizen Kane' (1941)", "'Zoolander' (2001)"]);
 /// ```
-pub fn extract_all_p<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<String>>
+pub fn extract_all_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<String>>
 {
     let data = vfs::read_all(path)?;
     let mut values = vec![];
@@ -102,6 +113,36 @@ pub fn extract_all_p<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<String
         );
     }
     Ok(values)
+}
+
+/// Insert lines at the location determined by the regular expression and offset
+///
+/// * Handles path expansion and absolute path resolution
+/// * Offset
+///
+/// ### Examples
+/// ```
+/// use rivia_file::prelude::*;
+///
+/// assert!(vfs::set_memfs().is_ok());
+/// let file1 = vfs::root().mash("file1");
+/// let rx = Regex::new(r"'([^']+)'\s+\((\d{4})\)").unwrap();
+/// assert!(vfs::write_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941).").is_ok());
+/// assert_eq!(file::extract_rx(&file1, &rx).unwrap(), "Citizen Kane");
+/// ```
+pub fn insert_rx<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: &Regex) -> RvResult<()>
+{
+    // Match regex on file's lines for insert location
+    let mut loc = -1;
+    let data = vfs::read_all(path)?;
+    for line in BufReader::new(data.as_bytes()).lines() {
+        loc = loc + 1;
+        let line = line?;
+        if rx.is_match(&line) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 // {edit: /etc/sudoers, insert: append,  "builder ALL=(ALL) NOPASSWD: ALL"}
