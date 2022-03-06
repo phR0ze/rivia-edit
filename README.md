@@ -1,5 +1,8 @@
 # rivia-file
 [![license-badge](https://img.shields.io/crates/l/rivia-file.svg)](https://opensource.org/licenses/MIT)
+[![build](https://github.com/phR0ze/rivia-file/workflows/build/badge.svg?branch=main)](https://github.com/phR0ze/rivia-file/actions)
+[![codecov](https://codecov.io/gh/phR0ze/rivia-file/branch/main/graph/badge.svg?token=T6YLMOZI4R)](https://codecov.io/gh/phR0ze/rivia-file)
+[![Minimum rustc](https://img.shields.io/badge/rustc-1.30+-lightgray.svg)](https://github.com/phR0ze/rivia-file#rustc-requirements)
 
 ***Orchestration for manipulation of file content***
 
