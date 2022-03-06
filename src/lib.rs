@@ -5,7 +5,6 @@
 //! use rivia_file::prelude::*;
 //! ```
 mod edit;
-use std::io::{BufRead, BufReader};
 
 use regex::Regex;
 use rivia_vfs::prelude::*;
@@ -108,9 +107,7 @@ pub fn extract_all_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<Strin
     let data = vfs::read_all(path)?;
     let mut values = vec![];
     for cap in rx.captures_iter(&data) {
-        values.append(
-            &mut cap.iter().filter_map(|x| x.and_then(|y| Some(y.as_str().to_string()))).collect::<Vec<String>>(),
-        );
+        values.append(&mut cap.iter().filter_map(|x| x.map(|y| y.as_str().to_string())).collect::<Vec<String>>());
     }
     Ok(values)
 }
@@ -118,35 +115,72 @@ pub fn extract_all_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<Strin
 /// Insert lines at the location determined by the regular expression and offset
 ///
 /// * Handles path expansion and absolute path resolution
-/// * Offset
+/// * Insert will be before the regex location match. Use offset=1 to insert after match
+/// * Offset will be added to the resulting location: negative is allowed
+/// * Given lines will have a newline appended to them during insertion
 ///
 /// ### Examples
 /// ```
 /// use rivia_file::prelude::*;
 ///
 /// assert!(vfs::set_memfs().is_ok());
-/// let file1 = vfs::root().mash("file1");
-/// let rx = Regex::new(r"'([^']+)'\s+\((\d{4})\)").unwrap();
-/// assert!(vfs::write_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941).").is_ok());
-/// assert_eq!(file::extract_rx(&file1, &rx).unwrap(), "Citizen Kane");
+/// let file = vfs::root().mash("file");
+/// assert!(vfs::append_lines(&file, &["foo2"]).is_ok());
+/// assert!(file::insert_lines(&file, &["foo1"], r"foo2", 0).is_ok());
+/// assert_eq!(vfs::read_lines(&file).unwrap(), vec!["foo1".to_string(), "foo2".to_string()]);
 /// ```
-pub fn insert_rx<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: &Regex) -> RvResult<()>
+pub fn insert_lines<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: U, offset: isize) -> RvResult<()>
+{
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
+    insert_lines_rx(path, lines, rx, offset)
+}
+
+/// Insert lines at the location determined by the regular expression and offset
+///
+/// * Handles path expansion and absolute path resolution
+/// * Insert will be before the regex location match. Use offset=1 to insert after match
+/// * Offset will be added to the resulting location: negative is allowed
+/// * Given lines will have a newline appended to them during insertion
+///
+/// ### Examples
+/// ```
+/// use rivia_file::prelude::*;
+///
+/// assert!(vfs::set_memfs().is_ok());
+/// let file = vfs::root().mash("file");
+/// assert!(vfs::append_lines(&file, &["foo2"]).is_ok());
+/// let rx = &Regex::new(r"foo2").unwrap();
+/// assert!(file::insert_lines_rx(&file, &["foo1"], &rx, 0).is_ok());
+/// assert_eq!(vfs::read_lines(&file).unwrap(), vec!["foo1".to_string(), "foo2".to_string()]);
+/// ```
+pub fn insert_lines_rx<T: AsRef<Path>, U: AsRef<str>>(
+    path: T, lines: &[U], rx: &Regex, offset: isize,
+) -> RvResult<()>
 {
     // Match regex on file's lines for insert location
     let mut loc = -1;
-    let data = vfs::read_all(path)?;
-    for line in BufReader::new(data.as_bytes()).lines() {
-        loc = loc + 1;
-        let line = line?;
-        if rx.is_match(&line) {
+    let mut f_lines = vfs::read_lines(&path)?;
+    for (i, line) in f_lines.iter().enumerate() {
+        if rx.is_match(line) {
+            loc = i as isize;
             break;
         }
     }
-    if loc == -1 {
+
+    // Validate and adjust offset
+    if loc == -1 || loc + offset < 0 {
         return Err(FileError::InsertLocationNotFound.into());
+    }
+    let mut i = (loc + offset) as usize;
+
+    // Insert given lines
+    for line in lines {
+        f_lines.insert(i, line.as_ref().to_string());
+        i += 1;
     }
 
     // Write out the modified file
+    vfs::write_lines(&path, &f_lines)?;
 
     Ok(())
 }
@@ -202,13 +236,142 @@ mod tests
         let tmpdir = assert_memfs_setup!();
         let file1 = tmpdir.mash("file1");
 
-        assert!(vfs::append_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941)").is_ok());
-        assert!(vfs::append_all(&file1, "\n").is_ok());
-        assert!(vfs::append_all(&file1, "Another not great movie: 'Zoolander' (2001)").is_ok());
+        assert!(vfs::append_lines(&file1, &[
+            "Not my favorite movie: 'Citizen Kane' (1941)",
+            "Another not great movie: 'Zoolander' (2001)"
+        ])
+        .is_ok());
         assert_eq!(file::extract_all(&file1, r"'[^']+'\s+\(\d{4}\)").unwrap(), vec![
             "'Citizen Kane' (1941)",
             "'Zoolander' (2001)"
         ]);
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_insert_lines_error_cases()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let dir = tmpdir.mash("dir");
+        let file = dir.mash("file");
+
+        // fail abs
+        assert_eq!(
+            file::insert_lines("", &["foo"], r"foo", 0).unwrap_err().to_string(),
+            PathError::Empty.to_string()
+        );
+
+        // parent doesn't exist
+        assert_eq!(
+            file::insert_lines(&file, &["foo"], r"foo", 0).unwrap_err().to_string(),
+            PathError::does_not_exist(&file).to_string()
+        );
+
+        // exists but is not a file
+        assert_mkdir_p!(&dir);
+        assert_eq!(
+            file::insert_lines(&dir, &["foo"], r"foo", 0).unwrap_err().to_string(),
+            PathError::is_not_file(&dir).to_string()
+        );
+
+        // file exists and regix is invalid
+        assert_write_all!(&file, "foo");
+        assert_eq!(
+            file::insert_lines(&file, &["foo"], r"[", 0).unwrap_err().to_string(),
+            FileError::FailedToExtractString.to_string()
+        );
+
+        // Offset out of range
+        assert_eq!(
+            file::insert_lines(&file, &["foo"], r"", -2).unwrap_err().to_string(),
+            FileError::InsertLocationNotFound.to_string()
+        );
+
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_insert_lines_multi_before()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let file = tmpdir.mash("file");
+        assert!(vfs::append_lines(&file, &["foo3"]).is_ok());
+
+        assert!(file::insert_lines(&file, &["foo1", "foo2"], r"foo3", 0).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo1".to_string(),
+            "foo2".to_string(),
+            "foo3".to_string(),
+        ]);
+
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_insert_lines_multi_before_neg()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let file = tmpdir.mash("file");
+        assert!(vfs::append_lines(&file, &["foo3", "foo4"]).is_ok());
+
+        assert!(file::insert_lines(&file, &["foo1", "foo2"], r"foo4", -1).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo1".to_string(),
+            "foo2".to_string(),
+            "foo3".to_string(),
+            "foo4".to_string(),
+        ]);
+
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_insert_lines_multi_after()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let file = tmpdir.mash("file");
+        assert!(vfs::append_lines(&file, &["foo3"]).is_ok());
+
+        assert!(file::insert_lines(&file, &["foo1", "foo2"], r"foo3", 1).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo3".to_string(),
+            "foo1".to_string(),
+            "foo2".to_string(),
+        ]);
+
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_insert_lines_single_offset()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let file = tmpdir.mash("file");
+
+        // Seed the file
+        assert!(vfs::append_lines(&file, &["foo3"]).is_ok());
+
+        // Insert before with offset = 0
+        assert!(file::insert_lines(&file, &["foo2"], r"foo3", 0).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec!["foo2".to_string(), "foo3".to_string(),]);
+
+        // Insert after with offset = 1
+        assert!(file::insert_lines(&file, &["foo4"], r"foo3", 1).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo2".to_string(),
+            "foo3".to_string(),
+            "foo4".to_string(),
+        ]);
+
+        // Insert before negative with offset = -1
+        assert!(file::insert_lines(&file, &["foo1"], r"foo3", -1).is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo1".to_string(),
+            "foo2".to_string(),
+            "foo3".to_string(),
+            "foo4".to_string(),
+        ]);
+
         assert_remove_all!(&tmpdir);
     }
 }
