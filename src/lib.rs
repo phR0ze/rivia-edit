@@ -130,6 +130,7 @@ pub fn insert_lines<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: U, 
 /// original match.
 ///
 /// * Handles path expansion and absolute path resolution
+/// * If no match is found then the file is not changed
 ///
 /// ### Examples
 ///
@@ -159,8 +160,11 @@ pub fn insert_lines<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: U, 
 pub fn replace_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> RvResult<()>
 {
     let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
-    let data = rx.replace_all(&vfs::read_all(&path)?, value.as_ref()).to_string();
-    vfs::write_all(&path, data).unwrap();
+    let read_data = vfs::read_all(&path)?;
+    let write_data = rx.replace_all(&read_data, value.as_ref()).to_string();
+    if read_data != write_data {
+        vfs::write_all(&path, write_data).unwrap();
+    }
     Ok(())
 }
 
@@ -176,17 +180,20 @@ pub fn replace_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> R
 /// let tmpdir = assert_memfs_setup!();
 /// let file = tmpdir.mash("file");
 /// assert!(vfs::append_lines(&file, &["foo1", "foo2"]).is_ok());
-/// assert!(file::replace_all_ne(&file, r"foo2", "$blah").is_ok());
+/// assert!(file::replace_all_ne(&file, r"foo2", "$1").is_ok());
 /// assert_eq!(vfs::read_lines(&file).unwrap(), vec![
 ///     "foo1".to_string(),
-///     "$blah".to_string(),
+///     "$1".to_string(),
 /// ]);
 /// ```
 pub fn replace_all_ne<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> RvResult<()>
 {
     let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
-    let data = rx.replace_all(&vfs::read_all(&path)?, regex::NoExpand(value.as_ref())).to_string();
-    vfs::write_all(&path, data).unwrap();
+    let read_data = vfs::read_all(&path)?;
+    let write_data = rx.replace_all(&read_data, regex::NoExpand(value.as_ref())).to_string();
+    if read_data != write_data {
+        vfs::write_all(&path, write_data).unwrap();
+    }
     Ok(())
 }
 

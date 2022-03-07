@@ -1,3 +1,7 @@
+// edit
+// * insert
+// * replace
+
 // 
 //   - {edit: /root/.bashrc, regex: '|^(export PATH.*)|\1:/opt/<%=distro%>/bin|'}
 //   - {edit: /etc/skel/.bashrc, regex: '|^(export PATH.*)|\1:/opt/<%=distro%>/bin|'}
