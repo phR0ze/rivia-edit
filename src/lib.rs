@@ -43,26 +43,8 @@ pub mod prelude
 /// ```
 pub fn extract<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<String>
 {
-    extract_rx(path, &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?)
-}
-
-/// Returns the first captured string from the given regular expression
-///
-/// * Handles path expansion and absolute path resolution
-///
-/// ### Examples
-/// ```
-/// use rivia_file::prelude::*;
-///
-/// assert!(vfs::set_memfs().is_ok());
-/// let file1 = vfs::root().mash("file1");
-/// let rx = Regex::new(r"'([^']+)'\s+\((\d{4})\)").unwrap();
-/// assert!(vfs::write_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941).").is_ok());
-/// assert_eq!(file::extract_rx(&file1, &rx).unwrap(), "Citizen Kane");
-/// ```
-pub fn extract_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
-{
     let data = vfs::read_all(path)?;
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
     let caps = rx.captures(&data).ok_or(FileError::FailedToExtractString)?;
     let value = caps.get(1).ok_or(FileError::FailedToExtractString)?;
     Ok(value.as_str().to_string())
@@ -84,28 +66,9 @@ pub fn extract_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<String>
 /// ```
 pub fn extract_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U) -> RvResult<Vec<String>>
 {
-    extract_all_rx(path, &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?)
-}
-
-/// Returns all the captured strings from the given regular expression
-///
-/// * Handles path expansion and absolute path resolution
-///
-/// ### Examples
-/// ```
-/// use rivia_file::prelude::*;
-///
-/// assert!(vfs::set_memfs().is_ok());
-/// let file1 = vfs::root().mash("file1");
-/// let rx = Regex::new(r"'[^']+'\s+\(\d{4}\)").unwrap();
-/// assert!(vfs::append_all(&file1, "Not my favorite movie: 'Citizen Kane' (1941)\n").is_ok());
-/// assert!(vfs::append_all(&file1, "Another not great movie: 'Zoolander' (2001)").is_ok());
-/// assert_eq!(file::extract_all_rx(&file1, &rx).unwrap(), vec!["'Citizen Kane' (1941)", "'Zoolander' (2001)"]);
-/// ```
-pub fn extract_all_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<String>>
-{
     let data = vfs::read_all(path)?;
     let mut values = vec![];
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
     for cap in rx.captures_iter(&data) {
         values.append(&mut cap.iter().filter_map(|x| x.map(|y| y.as_str().to_string())).collect::<Vec<String>>());
     }
@@ -131,35 +94,10 @@ pub fn extract_all_rx<T: AsRef<Path>>(path: T, rx: &Regex) -> RvResult<Vec<Strin
 /// ```
 pub fn insert_lines<T: AsRef<Path>, U: AsRef<str>>(path: T, lines: &[U], rx: U, offset: isize) -> RvResult<()>
 {
-    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
-    insert_lines_rx(path, lines, rx, offset)
-}
-
-/// Insert lines at the location determined by the regular expression and offset
-///
-/// * Handles path expansion and absolute path resolution
-/// * Insert will be before the regex location match. Use offset=1 to insert after match
-/// * Offset will be added to the resulting location: negative is allowed
-/// * Given lines will have a newline appended to them during insertion
-///
-/// ### Examples
-/// ```
-/// use rivia_file::prelude::*;
-///
-/// assert!(vfs::set_memfs().is_ok());
-/// let file = vfs::root().mash("file");
-/// assert!(vfs::append_lines(&file, &["foo2"]).is_ok());
-/// let rx = &Regex::new(r"foo2").unwrap();
-/// assert!(file::insert_lines_rx(&file, &["foo1"], &rx, 0).is_ok());
-/// assert_eq!(vfs::read_lines(&file).unwrap(), vec!["foo1".to_string(), "foo2".to_string()]);
-/// ```
-pub fn insert_lines_rx<T: AsRef<Path>, U: AsRef<str>>(
-    path: T, lines: &[U], rx: &Regex, offset: isize,
-) -> RvResult<()>
-{
     // Match regex on file's lines for insert location
     let mut loc = -1;
     let mut f_lines = vfs::read_lines(&path)?;
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
     for (i, line) in f_lines.iter().enumerate() {
         if rx.is_match(line) {
             loc = i as isize;
@@ -185,33 +123,72 @@ pub fn insert_lines_rx<T: AsRef<Path>, U: AsRef<str>>(
     Ok(())
 }
 
-// {edit: /etc/sudoers, insert: append,  "builder ALL=(ALL) NOPASSWD: ALL"}
-// {edit: /root/.bashrc, regex: '|^(export PATH.*)|\1:/opt/<%=distro%>/bin|'}
-// {edit: /etc/skel/.bashrc, regex: '|^(export PATH.*)|\1:/opt/<%=distro%>/bin|'}
-// {edit: /etc/hosts, insert: append,  '127.0.0.1 localhost'}
-//   - edit: /etc/locale.conf insert: append values:
-//       - 'LANG=<%=language%>.<%=character_set%>'
-//       - 'LANGUAGE=<%=language%>.<%=character_set%>'
-//   - {edit: /etc/locale.gen, regex: '|^#(<%=language%>\..*)|\1|'}
-//  - {edit: /etc/profile.d/locale.sh, insert: append,  'export LC_COLLATE=C'}
-//   - {edit: /etc/profile.d/locale.sh, insert: append,  'export
-//     LC_ALL=<%=language%>.<%=character_set%>'}
-//   - edit: /etc/lsb-release insert: append values:
-//       - 'LSB_VERSION=1.4'
-//       - 'DISTRIB_ID=<%=distro%>'
-//       - 'DISTRIB_RELEASE=rolling'
-// - 'DISTRIB_DESCRIPTION=<%=distro%>'
+/// Replaces the match of the regex with the given value
+///
+/// Wraps the regex crate's replace and thus supports the same bash like variable exapansion in the
+/// value string by capture name or capture number to compose the resulting value from parts of the
+/// original match.
+///
+/// * Handles path expansion and absolute path resolution
+///
+/// ### Examples
+///
+/// Named capture groups in the values are supported with a bash like variable syntax. Curly braces
+/// are optional unless needed to separate the variable name from text values.
+/// ```
+/// use rivia_file::prelude::*;
+///
+/// assert!(vfs::set_memfs().is_ok());
+/// let file = vfs::root().mash("file");
+/// assert_write_all!(&file, "Springsteen, Bruce");
+/// assert!(file::replace_all(&file, r"(?P<last>[^,\s]+),\s+(?P<first>\S+)", "${first}_${last}").is_ok());
+/// assert_read_all!(&file, "Bruce_Springsteen");
+/// ```
+///
+/// Unnamed capture groups in the values are supported with a bash like variable syntax. Curly
+/// braces are optional unless needed to separate the variable name from the text values.
+/// ```
+/// use rivia_file::prelude::*;
+///
+/// assert!(vfs::set_memfs().is_ok());
+/// let file = vfs::root().mash("file");
+/// assert_write_all!(&file, "Springsteen, Bruce");
+/// assert!(file::replace_all(&file, r"([^,\s]+),\s+(\S+)", "${2}_${1}").is_ok());
+/// assert_read_all!(&file, "Bruce_Springsteen");
+/// ```
+pub fn replace_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> RvResult<()>
+{
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
+    let data = rx.replace_all(&vfs::read_all(&path)?, value.as_ref()).to_string();
+    vfs::write_all(&path, data).unwrap();
+    Ok(())
+}
 
-//       # Minimal amount of swapping without disabling it entirely
-//       - {edit: '/etc/sysctl.d/10-<%=distro%>.conf', insert: append,  "vm.swappiness = 1"}
-//       # Enable kernel ipv4 forwarding for containers
-//       - {edit: '/etc/sysctl.d/10-<%=distro%>.conf', insert: append,  "net.ipv4.ip_forward = 1"}
-//       # Disable ipv6 forwarding
-//       - {edit: '/etc/sysctl.d/10-<%=distro%>.conf', insert: append, "net.ipv6.conf.all.forwarding
-//         = 0"}
-//       # Increase the number of user file watches to max
-//       - {edit: '/etc/sysctl.d/10-<%=distro%>.conf', insert: append,  "fs.inotify.max_user_watches
-//         = 524288"}
+/// Variation of replace with out bash like variable expansion
+///
+/// * Handles path expansion and absolute path resolution
+/// * Can freely use $ in values without worry of expansion
+///
+/// ### Examples
+/// ```
+/// use rivia_file::prelude::*;
+///
+/// let tmpdir = assert_memfs_setup!();
+/// let file = tmpdir.mash("file");
+/// assert!(vfs::append_lines(&file, &["foo1", "foo2"]).is_ok());
+/// assert!(file::replace_all_ne(&file, r"foo2", "$blah").is_ok());
+/// assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+///     "foo1".to_string(),
+///     "$blah".to_string(),
+/// ]);
+/// ```
+pub fn replace_all_ne<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> RvResult<()>
+{
+    let rx = &Regex::new(rx.as_ref()).map_err(|_| FileError::FailedToExtractString)?;
+    let data = rx.replace_all(&vfs::read_all(&path)?, regex::NoExpand(value.as_ref())).to_string();
+    vfs::write_all(&path, data).unwrap();
+    Ok(())
+}
 
 // Unit tests
 // -------------------------------------------------------------------------------------------------
@@ -370,6 +347,23 @@ mod tests
             "foo2".to_string(),
             "foo3".to_string(),
             "foo4".to_string(),
+        ]);
+
+        assert_remove_all!(&tmpdir);
+    }
+
+    #[test]
+    fn test_replace()
+    {
+        let tmpdir = assert_memfs_setup!();
+        let file = tmpdir.mash("file");
+        assert!(vfs::append_lines(&file, &["foo1", "foo2", "foo3"]).is_ok());
+
+        assert!(file::replace_all(&file, r"foo2", "blah").is_ok());
+        assert_eq!(vfs::read_lines(&file).unwrap(), vec![
+            "foo1".to_string(),
+            "blah".to_string(),
+            "foo3".to_string(),
         ]);
 
         assert_remove_all!(&tmpdir);
