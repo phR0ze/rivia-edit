@@ -181,9 +181,7 @@ pub fn replace_all<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> R
 /// let file = tmpdir.mash("file");
 /// assert!(vfs::append_lines(&file, &["foo1", "foo2"]).is_ok());
 /// assert!(file::replace_all_ne(&file, r"foo2", "$1").is_ok());
-/// assert_eq!(vfs::read_lines(&file).unwrap(), vec![
-///     "foo1".to_string(),
-///     "$1".to_string(),
+/// assert_eq!(vfs::read_lines(&file).unwrap(), vec!["foo1".to_string(), "$1".to_string(),
 /// ]);
 /// ```
 pub fn replace_all_ne<T: AsRef<Path>, U: AsRef<str>>(path: T, rx: U, value: U) -> RvResult<()>

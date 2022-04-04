@@ -1,6 +1,6 @@
 [package]
 name = "rivia-file"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2021"
 authors = ["phR0ze"]
 license = "MIT OR Apache-2.0"
@@ -31,4 +31,4 @@ opt-level = 0   # Default no optimization
 
 [dependencies]
 regex = "1.5"
-rivia-vfs = "0.2.4"
+rivia-vfs = "0.2.5"
